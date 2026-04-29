@@ -2,12 +2,11 @@
 Fake News Detection System - Complete with Combined Analysis
 4-Layer Ensemble + Text Analysis + Combined Results + Suggestions
 """
-
+import matplotlib.pyplot as plt
 import streamlit as st
 import pickle
 import re
 import os
-import matplotlib.pyplot as plt
 import numpy as np
 from PIL import Image, ImageChops
 import io
