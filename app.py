@@ -535,62 +535,308 @@ with tab2:
                     for s in img_suggestions:
                         st.write(s)
 
-# ==================== TAB 3: COMBINED ANALYSIS ====================
+# ==================== TAB 3: COMBINED ANALYSIS (UPDATED) ====================
 with tab3:
-    st.header("Combined Text + Image Analysis")
+    st.header("🔗 Combined Text + Image Analysis")
     st.caption("Most accurate - analyzes both text and image together")
     
     col1, col2 = st.columns(2)
     
     with col1:
-        st.subheader("📝 Text")
-        combined_text = st.text_area("News text:", height=150, key="combined_text")
+        st.subheader("📝 News Text")
+        combined_text = st.text_area(
+            "Enter or paste the news article text:",
+            height=200,
+            key="combined_text",
+            placeholder="Example: The government announced new economic policies today..."
+        )
+        
+        # Quick test examples for combined tab
+        col_a, col_b = st.columns(2)
+        with col_a:
+            if st.button("📋 Fake News Example", use_container_width=True):
+                st.session_state['combined_text'] = "URGENT! Breaking news! You won't believe what happened! This is the biggest secret they don't want you to know! Share before deleted!"
+                st.rerun()
+        with col_b:
+            if st.button("📋 Real News Example", use_container_width=True):
+                st.session_state['combined_text'] = "The government announced new economic policies today aimed at helping small businesses. The plan includes tax incentives and infrastructure funding according to official sources."
+                st.rerun()
+        
+        # Load example if selected
+        if 'combined_text' in st.session_state:
+            combined_text = st.session_state['combined_text']
     
     with col2:
-        st.subheader("🖼️ Image")
-        combined_image = st.file_uploader("Associated image:", type=['jpg', 'jpeg', 'png'], key="combined_image")
+        st.subheader("🖼️ Associated Image")
+        combined_image = st.file_uploader(
+            "Upload the image associated with this news:",
+            type=['jpg', 'jpeg', 'png', 'webp'],
+            key="combined_image"
+        )
         if combined_image:
-            st.image(combined_image, width=250)
+            st.image(combined_image, caption="Uploaded Image", use_column_width=True)
     
-    if st.button("Analyze Both", type="primary"):
+    if st.button("🔍 Analyze Both (Text + Image)", type="primary", use_container_width=True):
         if combined_text and combined_image:
-            if vectorizer and classifier:
-                processed = combined_text.lower()
-                processed = re.sub(r'[^a-zA-Z\s]', '', processed)
-                features = vectorizer.transform([processed])
-                proba = classifier.predict_proba(features)[0]
-                text_fake_score = proba[0]
-                text_reasoning, text_suggestions = generate_text_reasoning(combined_text, text_fake_score)
+            if vectorizer and classifier and API_KEY:
+                with st.spinner("Analyzing both text and image together..."):
+                    
+                    # ========== TEXT ANALYSIS ==========
+                    processed = combined_text.lower()
+                    processed = re.sub(r'[^a-zA-Z\s]', '', processed)
+                    features = vectorizer.transform([processed])
+                    proba = classifier.predict_proba(features)[0]
+                    
+                    text_fake_score = proba[0]
+                    text_real_score = proba[1]
+                    text_confidence = max(proba)
+                    
+                    # Text Reasoning
+                    text_reasons = []
+                    text_suggestions = []
+                    text_lower = combined_text.lower()
+                    
+                    # Check for fake indicators
+                    sensational_words = ['breaking', 'urgent', 'shocking', 'viral', 'alert', 'warning', 'miracle', 'unbelievable']
+                    found_sensational = [w for w in sensational_words if w in text_lower]
+                    if found_sensational:
+                        text_reasons.append(f"Sensational words: {', '.join(found_sensational[:3])}")
+                        text_suggestions.append("✓ Verify claims with official sources")
+                    
+                    caps_ratio = sum(1 for c in combined_text if c.isupper()) / max(len(combined_text), 1)
+                    if caps_ratio > 0.15:
+                        text_reasons.append(f"Excessive capitalization ({caps_ratio:.0%} of text)")
+                        text_suggestions.append("✓ Legitimate news rarely uses all caps")
+                    
+                    exclamation_count = combined_text.count('!')
+                    if exclamation_count > 2:
+                        text_reasons.append(f"Multiple exclamation marks ({exclamation_count} !)")
+                        text_suggestions.append("✓ Excessive punctuation indicates manipulation")
+                    
+                    urgent_words = ['urgent', 'immediately', 'asap', 'now', 'breaking']
+                    if any(w in text_lower for w in urgent_words):
+                        text_reasons.append("Urgency language detected")
+                        text_suggestions.append("✓ Fake news creates false urgency")
+                    
+                    source_words = ['according to', 'reuters', 'ap', 'bbc', 'cnn', 'official']
+                    found_sources = [s for s in source_words if s in text_lower]
+                    if not found_sources and len(combined_text.split()) > 50:
+                        text_reasons.append("No credible sources cited")
+                        text_suggestions.append("✓ Check if news cites verifiable sources")
+                    
+                    formal_words = ['announced', 'statement', 'official', 'government', 'president', 'minister', 'report', 'study']
+                    found_formal = [w for w in formal_words if w in text_lower]
+                    if len(found_formal) >= 2:
+                        text_reasons.append(f"Formal language detected")
+                        text_suggestions.append("✅ Real news uses formal, balanced language")
+                    
+                    if found_sources:
+                        text_reasons.append(f"Source attribution found")
+                        text_suggestions.append("✅ Credible sources indicate legitimate reporting")
+                    
+                    # Text Verdict
+                    if text_fake_score > 0.55:
+                        text_verdict = "FAKE"
+                        text_summary = f"⚠️ TEXT: FAKE ({text_fake_score*100:.1f}% fake)"
+                    elif text_fake_score > 0.40:
+                        text_verdict = "SUSPICIOUS"
+                        text_summary = f"⚠️ TEXT: SUSPICIOUS ({text_fake_score*100:.1f}% fake)"
+                    else:
+                        text_verdict = "REAL"
+                        text_summary = f"✅ TEXT: REAL ({text_real_score*100:.1f}% real)"
+                    
+                    # ========== IMAGE ANALYSIS ==========
+                    combined_image.seek(0)
+                    rd_score = layer1_reality_defender(combined_image, API_KEY)
+                    
+                    combined_image.seek(0)
+                    local_edit_score, local_edit_reason = detect_local_edits_enhanced(combined_image)
+                    
+                    combined_image.seek(0)
+                    ela_score, ela_reason = layer2_ela_analysis(combined_image)
+                    
+                    combined_image.seek(0)
+                    noise_score, noise_reason = layer3_noise_analysis(combined_image)
+                    
+                    combined_image.seek(0)
+                    meta_score, meta_reason = layer4_metadata_analysis(combined_image)
+                    
+                    image_fake_score = (rd_score * 0.20) + (local_edit_score * 0.35) + (ela_score * 0.25) + (noise_score * 0.20)
+                    
+                    # Image Reasoning
+                    image_reasons = []
+                    image_suggestions = []
+                    
+                    if rd_score > 0.55:
+                        image_reasons.append(f"Face/Deepfake manipulation detected ({rd_score*100:.1f}%)")
+                        image_suggestions.append("✓ The face appears manipulated")
+                    
+                    if local_edit_score > 0.50:
+                        image_reasons.append(f"Local editing detected - possible clothes change")
+                        image_suggestions.append("✓ Image shows signs of digital manipulation")
+                    
+                    if ela_score > 0.45:
+                        image_reasons.append(f"Compression artifacts detected")
+                        image_suggestions.append("✓ Inconsistent compression suggests editing")
+                    
+                    if noise_score > 0.55:
+                        image_reasons.append(f"AI generation artifacts detected")
+                        image_suggestions.append("✓ Image may be AI-generated")
+                    
+                    if not image_reasons:
+                        image_reasons.append("No manipulation detected")
+                        image_suggestions.append("✅ Image appears authentic")
+                    
+                    # Image Verdict
+                    if image_fake_score > 0.55:
+                        image_verdict = "FAKE"
+                        image_summary = f"⚠️ IMAGE: FAKE ({image_fake_score*100:.1f}% fake)"
+                    elif image_fake_score > 0.40:
+                        image_verdict = "SUSPICIOUS"
+                        image_summary = f"⚠️ IMAGE: SUSPICIOUS ({image_fake_score*100:.1f}% fake)"
+                    else:
+                        image_verdict = "REAL"
+                        image_summary = f"✅ IMAGE: REAL ({(1-image_fake_score)*100:.1f}% real)"
+                    
+                    # ========== COMBINED ANALYSIS (4 SCENARIOS) ==========
+                    combined_score = (text_fake_score * 0.5) + (image_fake_score * 0.5)
+                    
+                    # Display Results
+                    st.subheader("📊 Combined Analysis Results")
+                    
+                    # Show individual scores
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        st.metric("Text Fake Score", f"{text_fake_score*100:.1f}%")
+                    with col2:
+                        st.metric("Image Fake Score", f"{image_fake_score*100:.1f}%")
+                    with col3:
+                        st.metric("Combined Score", f"{combined_score*100:.1f}%")
+                    
+                    st.progress(combined_score)
+                    
+                    # ========== 4 SCENARIOS HANDLING ==========
+                    
+                    # SCENARIO 1: Both FAKE
+                    if text_verdict == "FAKE" and image_verdict == "FAKE":
+                        st.error("## 🔴 COMBINED VERDICT: FAKE")
+                        st.markdown("**Both the news text and image are FAKE**")
+                        st.info(f"📝 {text_summary}")
+                        st.info(f"🖼️ {image_summary}")
+                        
+                        with st.expander("🔍 Detailed Analysis"):
+                            st.markdown("**Why this is FAKE:**")
+                            for r in text_reasons:
+                                st.write(f"📝 {r}")
+                            for r in image_reasons:
+                                st.write(f"🖼️ {r}")
+                        
+                        st.subheader("💡 Recommendations")
+                        st.warning("🚨 Do NOT share this content anywhere")
+                        st.write("✓ Verify through official news sources")
+                        st.write("✓ Report as misinformation if seen on social media")
+                        st.write("✓ Check fact-checking websites (Snopes, FactCheck.org)")
+                    
+                    # SCENARIO 2: Both REAL
+                    elif text_verdict == "REAL" and image_verdict == "REAL":
+                        st.success("## 🟢 COMBINED VERDICT: REAL")
+                        st.markdown("**Both the news text and image appear REAL**")
+                        st.info(f"📝 {text_summary}")
+                        st.info(f"🖼️ {image_summary}")
+                        
+                        with st.expander("🔍 Detailed Analysis"):
+                            st.markdown("**Why this is REAL:**")
+                            for r in text_reasons:
+                                st.write(f"📝 {r}")
+                            for r in image_reasons:
+                                st.write(f"🖼️ {r}")
+                        
+                        st.subheader("💡 Recommendations")
+                        st.success("✅ Content appears legitimate")
+                        st.write("✓ Still verify critical claims with official sources")
+                        st.write("✓ Cross-check with other trusted news outlets")
+                    
+                    # SCENARIO 3: Text FAKE, Image REAL (Mismatch)
+                    elif text_verdict == "FAKE" and image_verdict == "REAL":
+                        st.warning("## 🟠 COMBINED VERDICT: SUSPICIOUS - MISMATCH")
+                        st.markdown("**The TEXT is FAKE but the IMAGE is REAL**")
+                        st.info(f"📝 {text_summary}")
+                        st.info(f"🖼️ {image_summary}")
+                        
+                        with st.expander("🔍 Detailed Analysis"):
+                            st.markdown("**Why this is MISMATCH:**")
+                            st.markdown("📝 **Text Analysis (FAKE):**")
+                            for r in text_reasons:
+                                st.write(f"   • {r}")
+                            st.markdown("🖼️ **Image Analysis (REAL):**")
+                            for r in image_reasons:
+                                st.write(f"   • {r}")
+                            st.markdown("---")
+                            st.markdown("**Conclusion:** The image may be authentic but the text is fabricated. The image might be unrelated to this fake news.")
+                        
+                        st.subheader("💡 Recommendations")
+                        st.warning("⚠️ The TEXT is FAKE - do NOT believe the news")
+                        st.write("✓ The IMAGE appears real, but verify its original source")
+                        st.write("✓ Try reverse image search on Google Images")
+                        st.write("✓ Check if the image is from a different event")
+                    
+                    # SCENARIO 4: Text REAL, Image FAKE (Mismatch)
+                    elif text_verdict == "REAL" and image_verdict == "FAKE":
+                        st.warning("## 🟠 COMBINED VERDICT: SUSPICIOUS - MISMATCH")
+                        st.markdown("**The TEXT is REAL but the IMAGE is FAKE**")
+                        st.info(f"📝 {text_summary}")
+                        st.info(f"🖼️ {image_summary}")
+                        
+                        with st.expander("🔍 Detailed Analysis"):
+                            st.markdown("**Why this is MISMATCH:**")
+                            st.markdown("📝 **Text Analysis (REAL):**")
+                            for r in text_reasons:
+                                st.write(f"   • {r}")
+                            st.markdown("🖼️ **Image Analysis (FAKE):**")
+                            for r in image_reasons:
+                                st.write(f"   • {r}")
+                            st.markdown("---")
+                            st.markdown("**Conclusion:** The news text appears authentic but the image is manipulated or AI-generated.")
+                        
+                        st.subheader("💡 Recommendations")
+                        st.warning("⚠️ The IMAGE is FAKE - do NOT trust the visual")
+                        st.write("✓ The TEXT appears real, but verify the image source")
+                        st.write("✓ The image may be AI-generated or photoshopped")
+                        st.write("✓ Look for the same image from official sources")
+                    
+                    # Default case (SUSPICIOUS threshold)
+                    else:
+                        st.warning("## 🟠 COMBINED VERDICT: SUSPICIOUS")
+                        st.markdown("**Content shows mixed or uncertain signals**")
+                        st.info(f"📝 {text_summary}")
+                        st.info(f"🖼️ {image_summary}")
+                        
+                        with st.expander("🔍 Detailed Analysis"):
+                            if text_reasons:
+                                st.markdown("**Text Analysis:**")
+                                for r in text_reasons:
+                                    st.write(f"📝 {r}")
+                            if image_reasons:
+                                st.markdown("**Image Analysis:**")
+                                for r in image_reasons:
+                                    st.write(f"🖼️ {r}")
+                        
+                        st.subheader("💡 Recommendations")
+                        st.warning("⚠️ Be cautious - verify before sharing")
+                        st.write("✓ Cross-reference with trusted news sources")
+                        st.write("✓ Check fact-checking websites")
+                
+            elif not vectorizer or not classifier:
+                st.error("Text model not loaded properly.")
+            elif not API_KEY:
+                st.error("API key not configured. Please add REALITY_DEFENDER_API_KEY in secrets.")
             else:
-                text_fake_score = 0.5
-                text_reasoning = "Text model not available"
-                text_suggestions = []
-            
-            if API_KEY:
-                img_result = analyze_image_complete(combined_image, API_KEY)
-            else:
-                img_result = analyze_image_basic(combined_image)
-            
-            if img_result:
-                image_fake_score = img_result['fake_score']
-                combined_score = (text_fake_score * 0.5) + (image_fake_score * 0.5)
-                
-                if combined_score > 0.55:
-                    st.error(f"## ⚠️ COMBINED VERDICT: FAKE")
-                else:
-                    st.success(f"## ✅ COMBINED VERDICT: REAL")
-                
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    st.metric("Text Score", f"{text_fake_score*100:.1f}%")
-                with col2:
-                    st.metric("Image Score", f"{image_fake_score*100:.1f}%")
-                with col3:
-                    st.metric("Combined Score", f"{combined_score*100:.1f}%")
-                
-                st.progress(combined_score)
-        else:
-            st.warning("Please provide both text and image for combined analysis")
+                st.error("Models not loaded properly.")
+        
+        elif not combined_text:
+            st.warning("Please enter some text to analyze")
+        elif not combined_image:
+            st.warning("Please upload an image to analyze")
 
 st.markdown("---")
 st.markdown("🛡️ **Fake Content Detection System** | 4-Layer Ensemble | Combined Analysis | AI-Powered")
